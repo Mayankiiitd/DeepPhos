@@ -22,62 +22,96 @@ from keras.layers.normalization import BatchNormalization
 from keras.regularizers import l2
 import copy
 
-def predict_for_deepphos(train_file_name,sites,predictFrame = 'general',
-                         hierarchy=None, kinase=None):
-    '''
+# def predict_for_deepphos(train_file_name,sites,predictFrame = 'general',
+#                          hierarchy=None, kinase=None):
+#     '''
 
-    :param train_file_name: input of your prdict file
-                            it must be a .csv file and theinput format  is proteinName, postion,sites, shortseq
-    :param sites: the sites predict: site = 'S','T' OR 'Y'
-    :param predictFrame: 'general' or 'kinase'
-    :param hierarchy: if predictFrame is kinse: you must input the hierarchy:
-            group,family,subfamily,kinase to choose corresponding model
-    :param kinase: kinase name
-    :return:
-     a file with the score
-    '''
+#     :param train_file_name: input of your prdict file
+#                             it must be a .csv file and theinput format  is proteinName, postion,sites, shortseq
+#     :param sites: the sites predict: site = 'S','T' OR 'Y'
+#     :param predictFrame: 'general' or 'kinase'
+#     :param hierarchy: if predictFrame is kinse: you must input the hierarchy:
+#             group,family,subfamily,kinase to choose corresponding model
+#     :param kinase: kinase name
+#     :return:
+#      a file with the score
+#     '''
 
 
-    win1 = 51
-    win2 = 33
-    win3 = 15
-    from methods.dataprocess_predict import getMatrixInput
-    [X_test1,y_test,ids,position] = getMatrixInput(train_file_name, sites, win1)
-    [X_test2,_,_,_] = getMatrixInput(train_file_name, sites, win2)
-    [X_test3,_,_,_]  = getMatrixInput(train_file_name, sites, win3)
+#     win1 = 51
+#     win2 = 33
+#     win3 = 15
+#     from methods.dataprocess_predict import getMatrixInput
+#     [X_test1,y_test,ids,position] = getMatrixInput(train_file_name, sites, win1)
+#     [X_test2,_,_,_] = getMatrixInput(train_file_name, sites, win2)
+#     [X_test3,_,_,_]  = getMatrixInput(train_file_name, sites, win3)
 
-#     print X_test1.shape
-#     print len(position)
+# #     print X_test1.shape
+# #     print len(position)
 
-    from methods.model_n import model_net
-    model = model_net(X_test1, X_test2, X_test3, y_test,nb_epoch = 0)
+#     from methods.model_n import model_net
+#     model = model_net(X_test1, X_test2, X_test3, y_test,nb_epoch = 0)
 
-    #load model weight
+#     #load model weight
+#     if predictFrame == 'general':
+#         outputfile = 'general_{:s}'.format(site)
+#         if site == ('S','T'):
+#             model_weight = './models/model_general_S,T.h5'
+#         if site == 'Y':
+#             model_weight = './models/model_general_Y.h5'
+
+
+#     if predictFrame == 'kinase':
+#         outputfile = 'kinase_{:s}_{:s}'.format(hierarchy, kinase)
+#         model_weight = './models/model_{:s}_{:s}.h5'.format(hierarchy, kinase)
+# #     print model_weight
+#     model.load_weights(model_weight)
+#     predictions_t = model.predict([X_test1, X_test2, X_test3])
+#     results_ST = np.column_stack((ids, position,predictions_t[:, 1]))
+
+#     result = pd.DataFrame(results_ST)
+#     result.to_csv(outputfile + "prediction_phosphorylation.txt", index=False, header=None, sep='\t',
+#                   quoting=csv.QUOTE_NONNUMERIC)
+# if __name__ == '__main__':
+#     train_file_name = 'test data.csv'
+#     site = 'S','T'
+#     predict_for_deepphos(train_file_name, site, predictFrame='kinase',
+#                          hierarchy='group', kinase='AGC')
+
+from dataprocess_predict import getMatrixInput, loadFastaFile
+import numpy as np
+from keras.models import load_model
+
+def predict_for_deepphos(train_file_name, site, predictFrame='kinase', hierarchy='group', kinase='AGC'):
     if predictFrame == 'general':
-        outputfile = 'general_{:s}'.format(site)
-        if site == ('S','T'):
+        if site in ['S', 'T']:
             model_weight = './models/model_general_S,T.h5'
-        if site == 'Y':
+        elif site == 'Y':
             model_weight = './models/model_general_Y.h5'
+        else:
+            raise ValueError("Invalid site. Use 'S', 'T', or 'Y'.")
 
+    elif predictFrame == 'kinase':
+        if hierarchy == 'group':
+            if kinase in ['AGC', 'CAMK', 'CK1', 'CMGC', 'STE', 'TK', 'TKL']:
+                model_weight = f'./models/model_{kinase}_{site}.h5'
+            else:
+                raise ValueError("Invalid kinase group.")
+        elif hierarchy == 'family':
+            model_weight = f'./models/model_{kinase}_{site}.h5'
+        else:
+            raise ValueError("Invalid hierarchy.")
+    else:
+        raise ValueError("Invalid prediction frame.")
 
-    if predictFrame == 'kinase':
-        outputfile = 'kinase_{:s}_{:s}'.format(hierarchy, kinase)
-        model_weight = './models/model_{:s}_{:s}.h5'.format(hierarchy, kinase)
-#     print model_weight
-    model.load_weights(model_weight)
-    predictions_t = model.predict([X_test1, X_test2, X_test3])
-    results_ST = np.column_stack((ids, position,predictions_t[:, 1]))
+    # Load sequences and convert to matrix input
+    sequences = loadFastaFile(train_file_name)
+    matrix_input, labels = getMatrixInput(sequences, site, 15)
 
-    result = pd.DataFrame(results_ST)
-    result.to_csv(outputfile + "prediction_phosphorylation.txt", index=False, header=None, sep='\t',
-                  quoting=csv.QUOTE_NONNUMERIC)
-if __name__ == '__main__':
-    train_file_name = 'test data.csv'
-    site = 'S','T'
-    predict_for_deepphos(train_file_name, site, predictFrame='kinase',
-                         hierarchy='group', kinase='AGC')
-
+    # Load model and make predictions
+    model = load_model(model_weight)
+    predictions = model.predict(matrix_input)
+    print("Predictions:", predictions)
 
 
 
